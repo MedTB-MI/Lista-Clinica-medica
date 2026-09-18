@@ -262,6 +262,7 @@ const summarizeStudy = (
   const explicitDate = text.match(/\b(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/)?.[1];
   const negativeTep =
     /\bsin\s+(?:(?:evidencia|signos)\s+de\s+)?TEP\b/i.test(text) ||
+    /\bsin\s+signos(?:\s+tomogr[aá]ficos)?\s+de\s+tromboemboli/i.test(text) ||
     /\b(?:no\s+se\s+(?:observan|identifican)|ausencia\s+de)\b[^.]{0,100}\btromboemboli/i.test(text) ||
     /\b(?:negativo|negativa)\b[^.]{0,60}\bTEP\b/i.test(text);
   if (negativeTep) {
@@ -368,10 +369,23 @@ const parseNewSupplemental = (
   input: string,
   warnings: ReconcileWarning[],
 ): SupplementalEntry[] => {
-  const blocks = input
-    .split(/\n\s*\n|(?=^\s*(?:UC|HC|BAL|Cult Qx|FARES|KPC|CD|LMF|MF|TC|TAC|RMN|Rx|Eco|ETE|ECG|EEG)\b)/gim)
-    .map((block) => block.trim())
-    .filter(Boolean);
+  const header = /^\s*(?:(?:UC|HC|BAL|Cult Qx|FARES|KPC|CD|LMF|MF)(?=\s|:|$)|(?:TC|TAC|AngioTC|RMN|Rx|Eco|ETE|ECG|EEG)\b|(?:TOMOGRAF[IÍ]A|RESONANCIA|RADIOGRAF[IÍ]A|ECOGRAF[IÍ]A|ECOCARDIOGRAMA)\b)/iu;
+  const blocks: string[] = [];
+  let current: string[] = [];
+  let hasHeader = false;
+
+  input.split(/\r?\n/).forEach((line) => {
+    if (header.test(line)) {
+      if (hasHeader && current.some((candidate) => candidate.trim())) {
+        blocks.push(current.join('\n').trim());
+        current = [];
+      }
+      hasHeader = true;
+    }
+    current.push(line);
+  });
+  if (current.some((candidate) => candidate.trim())) blocks.push(current.join('\n').trim());
+
   const entries: SupplementalEntry[] = [];
   for (const block of blocks) {
     const parsed = parseSupplementalEntries(block);

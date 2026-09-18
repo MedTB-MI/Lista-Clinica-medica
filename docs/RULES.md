@@ -38,6 +38,7 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 | LAB-018 | Una glucosa previa no medida nuevamente no se arrastra de forma automática. | Determinística |
 | LAB-019 | `PrT`, `Alb`, `GGT` y `Tacrol` son conceptos independientes del bloque `Hep`; reconocer uno no autoriza a fabricar ni reemplazar los otros. | Determinística estructural |
 | LAB-020 | Un estudio `Ecodop Hep` se segmenta como estudio independiente y no se adjunta al valor precedente de laboratorio. | Determinística estructural |
+| LAB-021 | En informes hospitalarios multilínea, cada resultado se extrae dentro de la sección delimitada por su encabezado de analito. Las líneas de método, confirmación, alerta, unidad y rango no son resultados y no se permite cruzar al analito siguiente. | Determinística estructural |
 
 ## Tendencias y previos
 
@@ -111,6 +112,7 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 | IMG-013 | No mantener dos versiones redundantes del mismo estudio. | Parcial |
 | IMG-014 | Para TEP escribir siempre `TEP`; no crear `SEP`, `TP` u otra sigla. | Determinística |
 | IMG-015 | Una TC protocolo TEP negativa no se reduce a `sin TEP` cuando además coincide con el patrón aprobado de compromiso intersticial/bronquial bibasal e impresión infecciosa/inflamatoria; se conserva ese hallazgo principal y su incertidumbre. | Determinística para el patrón cerrado aprobado |
+| IMG-016 | Los párrafos vacíos internos no separan un informe. Un estudio nuevo comienza sólo ante un encabezado de estudio o microbiología reconocido; título, técnica, descripción e impresión se resumen como una unidad. | Determinística estructural |
 
 ## Fechas, privacidad e interfaz
 
@@ -148,3 +150,5 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 - No mutilar el hallazgo pulmonar principal de una TC TEP negativa.
 - Separar los conceptos canónicos de hepatograma, GGT, proteínas totales, albúmina y tacrolimus antes del merge.
 - Segmentar `Ecodop Hep` como estudio para impedir que quede unido al valor de Mg precedente.
+- Extraer resultados hospitalarios por secciones acotadas, sin capturar números de método, rangos ni analitos vecinos.
+- Mantener unido un informe radiológico multilínea aunque contenga párrafos vacíos.
