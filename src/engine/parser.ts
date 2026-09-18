@@ -179,6 +179,122 @@ interface RowValue {
   abnormal: boolean;
 }
 
+interface PlainReportSection {
+  label: string;
+  lines: string[];
+}
+
+const REPORT_ANALYTE_PATTERNS = [
+  'RECUENTO DE GL[OÓ]BULOS BLANCOS',
+  'RECUENTO DE PLAQUETAS',
+  'PLAQUETAS RECUENTO',
+  'PLAQUETAS',
+  'HEMATOCRITO',
+  'HEMOGLOBINA',
+  'NEUTR[OÓ]FILOS',
+  'BLASTOS',
+  'UREA(?: EN SANGRE)?',
+  'CREATININA(?: EN SANGRE)?',
+  'SODIO',
+  'POTASIO',
+  'CLORO',
+  '[ÁA]CIDO [ÚU]RICO EN SANGRE',
+  'CALCIO I[OÓ]NICO',
+  'CALCIO EN SANGRE',
+  'CAI',
+  'F[OÓ]SFORO(?: EN SANGRE)?',
+  'MAGNESIO(?: EN SANGRE)?',
+  'BILIRRUBINA DIRECTA',
+  'BILIRRUBINA TOTAL',
+  'ASPARTATO AMINOTRANSFERASA',
+  'ALANINA AMINOTRANSFERASA',
+  'FOSFATASA ALCALINA SERICA',
+  'GAMMA GLUTAMIL TRANSFERASA',
+  'ASAT-GOT',
+  'ALAT-GPT',
+  'GOT',
+  'GPT',
+  'AST',
+  'ALT',
+  'FAL',
+  'FA',
+  'GGT',
+  'BD',
+  'BT',
+  'TIEMPO DE TROMBOPLASTINA PARCIAL',
+  'TIEMPO DE PROTROMBINA',
+  'R\\.I\\.N\\.',
+  'RIN',
+  'KPTT',
+  'FIBRIN[OÓ]GENO',
+  'PROTE[IÍ]NA C REACTIVA',
+  'LACTATO DESHIDROGENASA',
+  'PROTE[IÍ]NAS TOTALES',
+  'ALB[UÚ]MINA',
+  'TACROL(?:EMIA)?',
+  'PCR',
+  'LDH',
+  'GB',
+];
+
+const REPORT_SECTION_HEADER = /^(?:HEMOGRAMA|HEPATOGRAMA|IONOGRAMA(?: EN SANGRE)?|COAGULOGRAMA|SERIE (?:ERITROCITARIA|LEUCOCITARIA|PLAQUETARIA)|QUIMICA|QUÍMICA)$/iu;
+
+const reportAnalyteHeader = new RegExp(
+  `^\\s*(?:\\|\\s*)?(${REPORT_ANALYTE_PATTERNS.join('|')})(?:(?:\\s*[:|]\\s*|\\s+)(.*))?$`,
+  'iu',
+);
+
+const splitPlainReportSections = (input: string): PlainReportSection[] => {
+  const sections: PlainReportSection[] = [];
+  let current: PlainReportSection | null = null;
+
+  input.split(/\r?\n/).forEach((rawLine) => {
+    const line = rawLine.trim();
+    const analyte = line.match(reportAnalyteHeader);
+    if (analyte) {
+      current = { label: analyte[1].trim(), lines: [] };
+      const inline = (analyte[2] ?? '').trim();
+      if (inline) current.lines.push(inline);
+      sections.push(current);
+      return;
+    }
+    if (REPORT_SECTION_HEADER.test(line)) {
+      current = null;
+      return;
+    }
+    if (current) current.lines.push(rawLine);
+  });
+
+  return sections;
+};
+
+const REFERENCE_RANGE = /^[<>]?\s*-?\d+(?:[.,]\d+)?\s*(?:-|–|—|a)\s*[<>]?\s*-?\d+(?:[.,]\d+)?$/iu;
+const RESULT_WITH_OPTIONAL_UNIT = /^\*{0,2}\s*([<>]?\s*-?\d+(?:[.,]\d+)?)\s*\*{0,2}\s*(?:[↑↓]\s*)?(?:(?:%|g\s*\/\s*d[lL]|mg\s*\/\s*d[lL]|mEq\s*\/\s*[lL]|mmol\s*\/\s*[lL]|mil(?:lones)?\s*\/\s*mm3|UI\s*\/\s*[lL]|seg|pg|f[lL])\s*)?(?:[<>]?\s*-?\d+(?:[.,]\d+)?\s*(?:-|–|—|a)\s*[<>]?\s*-?\d+(?:[.,]\d+)?)?$/iu;
+
+const valueFromPlainSection = (section: PlainReportSection): RowValue | null => {
+  for (const rawLine of section.lines) {
+    const line = rawLine
+      .trim()
+      .replace(/^\|\s*/, '')
+      .replace(/\s*\|$/, '')
+      .trim();
+    if (!line) continue;
+    if (/^(?:m[eé]todo|resultado\s+confirmado)\s*:?/iu.test(line)) continue;
+    if (/RESULTADO\s+CR[IÍ]TICO/iu.test(line)) continue;
+    if (/^[↑↓]+$/u.test(line)) continue;
+    if (/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/u.test(line)) continue;
+    if (REFERENCE_RANGE.test(line)) continue;
+
+    const match = line.match(RESULT_WITH_OPTIONAL_UNIT);
+    if (!match) continue;
+    return {
+      value: match[1].replace(/\s+/g, ''),
+      abnormal: section.lines.some((candidate) => /[↑↓]/u.test(candidate)),
+    };
+  }
+  return null;
+};
+
 const markdownRow = (input: string, labelPattern: string): RowValue | null => {
   const rowRegex = new RegExp(
     `^\\s*\\|?\\s*(?:${labelPattern})\\s*\\|.*?\\*\\*\\s*([<>]?\\d+(?:[.,]\\d+)?)\\s*\\*\\*.*$`,
@@ -189,17 +305,21 @@ const markdownRow = (input: string, labelPattern: string): RowValue | null => {
   return { value: match[1], abnormal: /\*\*\s*[↑↓]\s*\*\*/u.test(match[0]) };
 };
 
-const plainValue = (input: string, labelPattern: string): RowValue | null => {
-  const regex = new RegExp(
-    `(?:^|\\n)\\s*(?:${labelPattern})\\s*[:|]?\\s*([<>]?\\d+(?:[.,]\\d+)?)`,
-    'imu',
-  );
-  const match = input.match(regex);
-  return match ? { value: match[1], abnormal: false } : null;
+const plainValue = (
+  input: string,
+  labelPattern: string,
+  sections = splitPlainReportSections(input),
+): RowValue | null => {
+  const label = new RegExp(`^(?:${labelPattern})$`, 'iu');
+  const section = sections.find((candidate) => label.test(candidate.label));
+  return section ? valueFromPlainSection(section) : null;
 };
 
-const reportValue = (input: string, labelPattern: string): RowValue | null =>
-  markdownRow(input, labelPattern) ?? plainValue(input, labelPattern);
+const reportValue = (
+  input: string,
+  labelPattern: string,
+  sections?: PlainReportSection[],
+): RowValue | null => markdownRow(input, labelPattern) ?? plainValue(input, labelPattern, sections);
 
 const item = (key: LabKey, value: string, abnormal = false): LabItem => ({
   key,
@@ -216,10 +336,15 @@ const compactCount = (value: string): string => {
 
 export const parseRawLabReport = (input: string): LabItem[] => {
   if (!input.trim()) return [];
+  const plainSections = splitPlainReportSections(input);
   const isReport =
     /HEMOGRAMA|RECUENTO DE GL[OÓ]BULOS|RECUENTO DE PLAQUETAS|PLAQUETAS RECUENTO|IONOGRAMA EN SANGRE|UREA EN SANGRE|CREATININA EN SANGRE|PROTE[IÍ]NAS TOTALES|CALCIO I[OÓ]NICO|F[OÓ]SFORO|MAGNESIO|BLASTOS/i.test(input) ||
-    /(?:^|\n)\s*BD\s*[:|]?\s*[<>]?\d/im.test(input);
+    /(?:^|\n)\s*BD\s*[:|]?\s*[<>]?\d/im.test(input) ||
+    (/m[eé]todo\s*:/iu.test(input) && plainSections.length > 0);
   if (!isReport) return parseCompactList(input).labs;
+
+  const read = (labelPattern: string): RowValue | null =>
+    reportValue(input, labelPattern, plainSections);
 
   const output: LabItem[] = [];
   const add = (key: LabKey, row: RowValue | null, transform?: (value: string) => string): void => {
@@ -227,12 +352,12 @@ export const parseRawLabReport = (input: string): LabItem[] => {
     output.push(item(key, transform ? transform(row.value) : row.value, row.abnormal));
   };
 
-  add('hto', reportValue(input, 'HEMATOCRITO'));
-  add('hb', reportValue(input, 'HEMOGLOBINA'));
+  add('hto', read('HEMATOCRITO'));
+  add('hb', read('HEMOGLOBINA'));
 
-  const gb = reportValue(input, 'RECUENTO DE GL[OÓ]BULOS BLANCOS|GB');
-  const neutrophils = reportValue(input, 'NEUTROFILOS(?:\\s*\\||\\s{2,})');
-  const blasts = reportValue(input, 'BLASTOS');
+  const gb = read('RECUENTO DE GL[OÓ]BULOS BLANCOS|GB');
+  const neutrophils = read('NEUTR[OÓ]FILOS');
+  const blasts = read('BLASTOS');
   if (gb) {
     let gbValue = compactCount(gb.value);
     const differential: LabItem['differential'] = {};
@@ -246,31 +371,31 @@ export const parseRawLabReport = (input: string): LabItem[] => {
     });
   }
 
-  add('plaq', reportValue(input, 'PLAQUETAS RECUENTO|RECUENTO DE PLAQUETAS|PLAQUETAS'), compactCount);
-  add('u', reportValue(input, 'UREA(?: EN SANGRE)?'));
-  add('cr', reportValue(input, 'CREATININA(?: EN SANGRE)?'));
+  add('plaq', read('PLAQUETAS RECUENTO|RECUENTO DE PLAQUETAS|PLAQUETAS'), compactCount);
+  add('u', read('UREA(?: EN SANGRE)?'));
+  add('cr', read('CREATININA(?: EN SANGRE)?'));
 
-  const na = reportValue(input, 'SODIO');
-  const k = reportValue(input, 'POTASIO');
-  const cl = reportValue(input, 'CLORO');
+  const na = read('SODIO');
+  const k = read('POTASIO');
+  const cl = read('CLORO');
   if (na && k && cl) {
     output.push(item('iono', `${na.value}/${k.value}/${cl.value}`, na.abnormal || k.abnormal || cl.abnormal));
   }
 
-  add('ac_urico', reportValue(input, 'ACIDO URICO EN SANGRE'));
-  add('cai', reportValue(input, 'CALCIO I[OÓ]NICO|CAI'));
-  add('ca', reportValue(input, 'CALCIO EN SANGRE'));
-  add('p', reportValue(input, 'F[OÓ]SFORO(?: EN SANGRE)?'));
-  add('mg', reportValue(input, 'MAGNESIO(?: EN SANGRE)?'));
+  add('ac_urico', read('[ÁA]CIDO [ÚU]RICO EN SANGRE'));
+  add('cai', read('CALCIO I[OÓ]NICO|CAI'));
+  add('ca', read('CALCIO EN SANGRE'));
+  add('p', read('F[OÓ]SFORO(?: EN SANGRE)?'));
+  add('mg', read('MAGNESIO(?: EN SANGRE)?'));
 
-  const bd = reportValue(input, 'BILIRRUBINA DIRECTA|BD');
-  const bt = reportValue(input, 'BILIRRUBINA TOTAL|BT');
-  const got = reportValue(input, 'ASPARTATO AMINOTRANSFERASA|ASAT-GOT|GOT|AST');
-  const gpt = reportValue(input, 'ALANINA AMINOTRANSFERASA|ALAT-GPT|GPT|ALT');
-  const fa = reportValue(input, 'FOSFATASA ALCALINA SERICA|FAL|FA');
-  const ggt = reportValue(input, 'GAMMA GLUTAMIL TRANSFERASA|GGT');
-  const proteins = reportValue(input, 'PROTE[IÍ]NAS TOTALES');
-  const albumin = reportValue(input, 'ALBUMINA');
+  const bd = read('BILIRRUBINA DIRECTA|BD');
+  const bt = read('BILIRRUBINA TOTAL|BT');
+  const got = read('ASPARTATO AMINOTRANSFERASA|ASAT-GOT|GOT|AST');
+  const gpt = read('ALANINA AMINOTRANSFERASA|ALAT-GPT|GPT|ALT');
+  const fa = read('FOSFATASA ALCALINA SERICA|FAL|FA');
+  const ggt = read('GAMMA GLUTAMIL TRANSFERASA|GGT');
+  const proteins = read('PROTE[IÍ]NAS TOTALES');
+  const albumin = read('ALB[UÚ]MINA');
   const hepRows = [bd, bt, got, gpt, fa];
   if (hepRows.every((row) => row !== null)) {
     const limits = [0.3, 1.2, 32, 33, 104];
@@ -284,10 +409,10 @@ export const parseRawLabReport = (input: string): LabItem[] => {
   }
   add('ggt', ggt);
 
-  const kptt = reportValue(input, 'TIEMPO DE TROMBOPLASTINA PARCIAL|KPTT');
-  const tp = reportValue(input, 'TIEMPO DE PROTROMBINA');
-  const rin = reportValue(input, 'R\\.I\\.N\\.|RIN');
-  const fibrinogen = reportValue(input, 'FIBRINOGENO');
+  const kptt = read('TIEMPO DE TROMBOPLASTINA PARCIAL|KPTT');
+  const tp = read('TIEMPO DE PROTROMBINA');
+  const rin = read('R\\.I\\.N\\.|RIN');
+  const fibrinogen = read('FIBRIN[OÓ]GENO');
   const coagRows = [kptt, tp, rin, fibrinogen].filter((row): row is RowValue => row !== null);
   if (coagRows.length >= 3) {
     const abnormal = coagRows.some((row) => row.abnormal);
@@ -304,11 +429,11 @@ export const parseRawLabReport = (input: string): LabItem[] => {
     output.push(item('coag', value, abnormal));
   }
 
-  add('pcr', reportValue(input, 'PROTEINA C REACTIVA|PCR'));
-  add('ldh', reportValue(input, 'LACTATO DESHIDROGENASA|LDH'));
+  add('pcr', read('PROTE[IÍ]NA C REACTIVA|PCR'));
+  add('ldh', read('LACTATO DESHIDROGENASA|LDH'));
   add('alb', albumin);
   add('prot', proteins);
-  add('tacrol', reportValue(input, 'TACROL(?:EMIA)?'));
+  add('tacrol', read('TACROL(?:EMIA)?'));
 
   if (neutrophils && !blasts && /^\s*N\s*\d/i.test(input.trim())) {
     const gbItem = output.find((candidate) => candidate.key === 'gb');
