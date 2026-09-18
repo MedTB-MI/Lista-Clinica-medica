@@ -45,6 +45,12 @@ LC-ERR-001 aprueba conservar `44(71)` dentro de un hepatograma histórico de och
 
 La versión actual no interpreta normalidad ni relevancia en ese escenario. Si cambian varios componentes, informa los valores nuevos sin seleccionar previos. La matriz clínica general sigue requiriendo decisión del propietario.
 
+## A-010 — Hepatograma nuevo incompleto frente a una estructura histórica extendida
+
+No está definido cómo serializar una lista previa de ocho componentes cuando el informe nuevo trae sólo una parte de `BD/BT/GOT/GPT/FA/GGT/PrT/Alb`: si debe conservarse la estructura de ocho posiciones mezclando fechas, emitir sólo los conceptos efectivamente medidos o mantener los faltantes por separado.
+
+El motor sólo reconstruye la estructura extendida cuando los ocho conceptos actuales fueron reconocidos. Si falta alguno, no completa posiciones ni inventa equivalencias. Esta decisión queda pendiente de Tomás.
+
 ## Decisión de release
 
 La app es apta como prototipo verificable y asistente conservador. No debe considerarse una reproducción completa del Gem ni publicarse para uso clínico rutinario hasta cerrar A-001 y A-005, como mínimo.
