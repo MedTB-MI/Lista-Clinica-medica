@@ -30,8 +30,12 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 | LAB-010 | Iono usa `Iono Na/K/Cl`. | Determinística |
 | LAB-011 | No conservar un ionograma previo trivial. | Parcial |
 | LAB-012 | EABv = venoso; EABa = arterial; mantener estructura previa y no interpretar. | Determinística para formatos reconocidos |
-| LAB-013 | Glucosa no se agrega automáticamente; se conserva si ya se sigue o tiene utilidad concreta. | Parcial |
+| LAB-013 | Una glucosa medida hoy se incluye; una glucosa de la lista previa que no se repite se elimina según LAB-018. | Determinística |
 | LAB-014 | Parámetros opcionales (Alb, LDH, ferritina, ProBNP, TSH, GGT, ácido úrico, CMV, serologías) se incluyen si ya se siguen o son claramente relevantes. | Parcial |
+| LAB-015 | `Plaq`/`PLAQUETAS RECUENTO`, `Cr`/`CREATININA EN SANGRE`, `U`/`Urea`/`UREA EN SANGRE`, `GB`/`RECUENTO DE GLOBULOS BLANCOS`, `Hb`/`HEMOGLOBINA` y `Hto`/`HEMATOCRITO` se reconcilian por el mismo concepto interno. | Determinística |
+| LAB-016 | Cuando la lista previa usa `Urea`, una actualización conserva ese rótulo; cuando usa `U`, conserva `U`. | Determinística |
+| LAB-017 | En una tendencia de GB con blastos aprobada, ambos recuentos se compactan a una cifra decimal y el diferencial actual se expresa como `[porcentaje]%B`. | Determinística para el patrón aprobado |
+| LAB-018 | Una glucosa previa no medida nuevamente no se arrastra de forma automática. | Determinística |
 
 ## Tendencias y previos
 
@@ -47,6 +51,7 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 | PREV-008 | Para Alb, Ca, P, Mg y ácido úrico no conservar un previo por defecto. | Determinística |
 | PREV-009 | No usar umbrales matemáticos rígidos para decidir relevancia. | Incompatible con automatización completa sin una regla sustituta aprobada |
 | PREV-010 | Un estudio especial no repetido y todavía útil se conserva exactamente, incluidos sus previos. | Parcial: «útil» no está formalizado |
+| PREV-011 | Casos cuantitativos aprobados por LC-ERR-001: `Hb 8.5 → 7` conserva `(8.5)`; `Cr 0.54 → 0.76` omite previo; `Urea 35 → 24` omite previo; `Plaq 311 → 27` conserva `(311)`. | Determinística para estos patrones; la matriz general sigue abierta en A-001 |
 
 ## Intervenciones
 
@@ -68,8 +73,10 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 | HEP-003 | Hepatograma aproximadamente habitual y sin aporte adicional: `Hep sp`. | Parcial: faltan umbrales y definición de «aproximadamente» |
 | HEP-004 | No usar `Hepato s/p`, `Hep s/p` ni `Hepato sp`; normalizarlos a `Hep sp`. | Determinística |
 | HEP-005 | Puede conservarse un previo sólo en el componente importante. | Parcial |
+| HEP-006 | Si una lista previa ya usa hepatograma extendido de ocho componentes y el nuevo informe contiene esos mismos ocho componentes, se conserva la estructura histórica; si cambia un único componente, el previo se adjunta sólo a ese componente. No se infieren normalidad ni relevancia clínica. | Determinística estructural; alcance clínico abierto en A-009 |
 | COAG-001 | Coagulación aproximadamente normal: `Coag sp`. | Parcial: faltan rangos formales |
 | COAG-002 | Si hay alteración, conservar los componentes relevantes. | Parcial |
+| COAG-003 | Un `Coag sp` nuevo no se agrega si la lista previa no seguía coagulación. Si ya se seguía, la medición nueva puede actualizarla. | Determinística para persistencia |
 
 ## Orina y microbiología
 
@@ -100,6 +107,7 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 | IMG-012 | Conservar estudios previos de otro territorio, evento o etapa relevante. | Parcial |
 | IMG-013 | No mantener dos versiones redundantes del mismo estudio. | Parcial |
 | IMG-014 | Para TEP escribir siempre `TEP`; no crear `SEP`, `TP` u otra sigla. | Determinística |
+| IMG-015 | Una TC protocolo TEP negativa no se reduce a `sin TEP` cuando además coincide con el patrón aprobado de compromiso intersticial/bronquial bibasal e impresión infecciosa/inflamatoria; se conserva ese hallazgo principal y su incertidumbre. | Determinística para el patrón cerrado aprobado |
 
 ## Fechas, privacidad e interfaz
 
@@ -131,3 +139,7 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 - No perder previos con reposición/transfusión.
 - No inventar fecha para imágenes sin fecha.
 - No inventar siglas alternativas de TEP.
+- Reconciliar por concepto canónico aunque cambie el nombre crudo del analito.
+- No arrastrar glucosa o FG no repetidos en LC-ERR-001.
+- No agregar `Coag sp` nuevo cuando no se venía siguiendo.
+- No mutilar el hallazgo pulmonar principal de una TC TEP negativa.

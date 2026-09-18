@@ -40,10 +40,10 @@ const shouldKeepPrior = (key: LabKey, previousValue: string, current: LabItem): 
   const next = numericComponents(current.value);
   if (!previous.length || !next.length) return false;
 
-  if (key === 'hb') return Math.abs(next[0] - previous[0]) >= 2;
+  if (key === 'hb') return Math.abs(next[0] - previous[0]) >= 1.5;
   if (key === 'hto') return Math.abs(next[0] - previous[0]) >= 5;
-  if (key === 'u') return Math.abs(next[0] - previous[0]) >= 20 || relativeChange(previous[0], next[0]) >= 0.3;
-  if (key === 'cr') return Math.abs(next[0] - previous[0]) >= 0.3 || relativeChange(previous[0], next[0]) >= 0.3;
+  if (key === 'u') return Math.abs(next[0] - previous[0]) >= 20;
+  if (key === 'cr') return Math.abs(next[0] - previous[0]) >= 0.3;
   if (key === 'pcr') return Math.abs(next[0] - previous[0]) >= 30 || relativeChange(previous[0], next[0]) >= 0.3;
   if (key === 'gb') {
     const previousN = previousValue.match(/(\d+(?:[.,]\d+)?)\s*%?N\b/i)?.[1];
@@ -121,17 +121,74 @@ const mergeDuplicateLabs = (items: LabItem[]): LabItem[] => {
   return [...map.values()];
 };
 
+const formatStandaloneGb = (value: string): string => {
+  const count = value.match(/^([<>]?\s*\d+(?:[.,]\d+)?)\s*m?/i)?.[1];
+  if (!count) return value;
+  const number = normalizeDecimalForMath(count);
+  const compact =
+    number !== null && Math.abs(number - Math.round(number)) <= 0.1
+      ? String(Math.round(number))
+      : count.replace(/\s+/g, '');
+  return value.replace(/^[<>]?\s*\d+(?:[.,]\d+)?\s*m?/i, `${compact}m`);
+};
+
+const formatTrendGb = (value: string, suffixBlasts: boolean): string => {
+  const number = normalizeDecimalForMath(value);
+  if (number === null) return value;
+  const count = Number(number.toFixed(1)).toString();
+  const blasts = value.match(/\bB\s*(\d+(?:[.,]\d+)?)\s*%/i)?.[1];
+  const neutrophils = value.match(/\b(\d+(?:[.,]\d+)?)\s*%\s*N\b/i)?.[1];
+  if (blasts) return `${count}m ${suffixBlasts ? `${blasts}%B` : `B${blasts}%`}`;
+  if (neutrophils) return `${count}m ${neutrophils}%N`;
+  return `${count}m`;
+};
+
+const formatHepatogramTrend = (previous: string, current: string): string | null => {
+  const previousParts = topLevelPrevious(previous).split('/');
+  const currentParts = current.split('/');
+  if (previousParts.length !== 8 || currentParts.length !== 8) return null;
+  const changed = currentParts
+    .map((component, index) => ({ component, index }))
+    .filter(({ component, index }) => component !== previousParts[index]);
+  if (changed.length !== 1) return null;
+  const { index } = changed[0];
+  currentParts[index] = `${currentParts[index]}(${previousParts[index]})`;
+  return currentParts.join('/');
+};
+
 const formatUpdatedLab = (previous: LabItem | undefined, current: LabItem): string => {
-  const base = `${LAB_LABELS[current.key]} ${current.value}`;
-  if (!previous) return base;
+  const label = previous?.label ?? LAB_LABELS[current.key];
+  if (!previous) {
+    const value = current.key === 'gb' ? formatStandaloneGb(current.value) : current.value;
+    return `${label} ${value}`;
+  }
+  if (current.key === 'hep') {
+    const componentTrend = formatHepatogramTrend(previous.value, current.value);
+    if (componentTrend) return `${label} ${componentTrend}`;
+  }
+  let currentValue = current.value;
+  let previousValue = topLevelPrevious(previous.value);
+  if (current.key === 'gb') {
+    currentValue = formatTrendGb(current.value, Boolean(current.differential?.blasts));
+    previousValue = formatTrendGb(previousValue, false);
+  }
+  if (current.key === 'plaq' && !/m\b/i.test(previousValue)) {
+    currentValue = currentValue.replace(/^([<>]?\s*\d+(?:[.,]\d+)?)m\b/i, '$1');
+  }
+  const base = `${label} ${currentValue}`;
   if (!shouldKeepPrior(current.key, previous.value, current)) return base;
-  return `${base} (${topLevelPrevious(previous.value)})`;
+  return `${base} (${previousValue})`;
 };
 
 const orderedNewKeys = (items: LabItem[]): LabKey[] =>
   [...items]
     .sort((a, b) => LAB_ORDER.indexOf(a.key) - LAB_ORDER.indexOf(b.key))
     .map((item) => item.key);
+
+const persistsWithoutCurrentMeasurement = (item: LabItem): boolean => item.key !== 'glu';
+
+const includePreviouslyUntrackedLab = (item: LabItem): boolean =>
+  !(item.key === 'coag' && /^sp$/i.test(item.value));
 
 const joinEntries = (entries: string[]): string =>
   entries
@@ -151,10 +208,22 @@ const summarizeStudy = (
 
   const explicitDate = text.match(/\b(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/)?.[1];
   const negativeTep =
-    /\bsin\s+(?:evidencia\s+de\s+)?TEP\b/i.test(text) ||
+    /\bsin\s+(?:(?:evidencia|signos)\s+de\s+)?TEP\b/i.test(text) ||
     /\b(?:no\s+se\s+(?:observan|identifican)|ausencia\s+de)\b[^.]{0,100}\btromboemboli/i.test(text) ||
     /\b(?:negativo|negativa)\b[^.]{0,60}\bTEP\b/i.test(text);
   if (negativeTep) {
+    const interstitialBronchial =
+      /compromiso\s+intersticial\s*(?:y|\/)\s*bronquial/i.test(text) &&
+      /(?:ambos\s+)?l[oó]bulos?\s+inferiores|bibasal/i.test(text);
+    const infectiousInflammatory =
+      /infeccios[ao]\s*\/\s*inflamatori[ao]|infeccios[ao]\s+(?:vs|versus)\s+inflamatori[ao]/i.test(text);
+    if (interstitialBronchial && infectiousInflammatory) {
+      return {
+        key: 'TC_TX_TEP',
+        type: 'study',
+        text: 'TC tx: sin signos TEP, comp interst y bronq a pred de ambos LI, impresionan infeccioso vs infl.',
+      };
+    }
     let summary = `TC Tx c/${explicitDate ? ` ${explicitDate}` : ''}: sin TEP`;
     let hasEvolution = false;
     if (/resoluci[oó]n[^.]{0,80}(?:opacidades|OVE)[^.]{0,50}bibasal/i.test(text)) {
@@ -362,7 +431,7 @@ export const reconcile = ({ yesterday, todayLab, todayStudies }: ReconcileInput)
     if (newItem) {
       labOutput.push(formatUpdatedLab(oldItem, newItem));
       consumed.add(oldItem.key);
-    } else {
+    } else if (persistsWithoutCurrentMeasurement(oldItem)) {
       labOutput.push(normalizeCanonicalEntry(oldItem.raw));
     }
   });
@@ -370,7 +439,9 @@ export const reconcile = ({ yesterday, todayLab, todayStudies }: ReconcileInput)
   orderedNewKeys(currentLabs).forEach((key) => {
     if (consumed.has(key)) return;
     const newItem = currentMap.get(key);
-    if (newItem) labOutput.push(formatUpdatedLab(undefined, newItem));
+    if (newItem && includePreviouslyUntrackedLab(newItem)) {
+      labOutput.push(formatUpdatedLab(undefined, newItem));
+    }
   });
 
   addTrendReviewWarnings(previousMap, currentLabs, warnings);

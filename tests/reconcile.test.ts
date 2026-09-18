@@ -151,6 +151,86 @@ describe('laboratorio crudo', () => {
   });
 });
 
+describe('LC-ERR-001 — reconciliación por concepto canónico', () => {
+  it('reemplaza plaquetas y conserva el previo marcado', () => {
+    expect(run('Plaq 311', 'Plaq 27')).toBe('Plaq 27 (311)');
+  });
+
+  it('reemplaza creatinina sin conservar un previo no aprobado', () => {
+    expect(run('Cr 0.54', 'CREATININA 0.76')).toBe('Cr 0.76');
+  });
+
+  it('reemplaza urea y conserva el estilo explícito de la lista anterior', () => {
+    expect(run('Urea 35', 'UREA EN SANGRE 24')).toBe('Urea 24');
+  });
+
+  it('conserva el previo aprobado de hemoglobina', () => {
+    expect(run('Hb 8.5', 'HEMOGLOBINA 7')).toBe('Hb 7 (8.5)');
+  });
+
+  it('serializa GB y blastos con una cifra decimal al mostrar tendencia', () => {
+    expect(
+      run('GB 16.92', 'RECUENTO DE GLOBULOS BLANCOS 3.91\nBLASTOS 48%'),
+    ).toBe('GB 3.9m 48%B (16.9m)');
+  });
+
+  it('no arrastra glucosa ni filtrado glomerular no repetidos', () => {
+    expect(run('Glu 128 FG 94', 'Hb 10')).toBe('Hb 10');
+  });
+
+  it('conserva el hallazgo pulmonar principal de una TC TEP negativa', () => {
+    expect(
+      run(
+        '',
+        '',
+        'TC de tórax protocolo TEP: sin signos de TEP; compromiso intersticial y bronquial a predominio de ambos lóbulos inferiores; impresionan de probable etiología infecciosa/inflamatoria.',
+      ),
+    ).toBe(
+      'TC tx: sin signos TEP, comp interst y bronq a pred de ambos LI, impresionan infeccioso vs infl.',
+    );
+  });
+
+  it('reproduce el caso de oro sintético completo', () => {
+    const yesterday =
+      'Hto 30.5 Hb 8.5 GB 16.92 Plaq 311 Iono 137/4.8/94 Cr 0.54 Glu 128 Urea 35 FG 94 PCR 42.1 Hepato: 0.2/0.24/16/20/71/211/6.83/3.77';
+    const todayLab = `
+| HEMATOCRITO | **20.5** | **↓** | % |
+| HEMOGLOBINA | **7** | **↓** | g/dl |
+| RECUENTO DE GLOBULOS BLANCOS | **3.91** | **↓** | mil/mm3 |
+| BLASTOS | **48** | **↑** | % |
+| PLAQUETAS RECUENTO | **27** | **↓** | mil/mm3 |
+| UREA EN SANGRE | **24** | mg/dl |
+| CREATININA EN SANGRE | **0.76** | mg/dl |
+| BILIRRUBINA DIRECTA | **0.2** | mg/dl |
+| BILIRRUBINA TOTAL | **0.24** | mg/dl |
+| ASPARTATO AMINOTRANSFERASA | **16** | UI/l |
+| ALANINA AMINOTRANSFERASA | **20** | UI/l |
+| FOSFATASA ALCALINA SERICA | **44** | UI/l |
+| GAMMA GLUTAMIL TRANSFERASA | **211** | **↑** | UI/l |
+| PROTEINAS TOTALES | **6.83** | g/dl |
+| ALBUMINA | **3.77** | g/dl |
+| TIEMPO DE TROMBOPLASTINA PARCIAL | **28** | seg |
+| TIEMPO DE PROTROMBINA | **92** | % |
+| R.I.N. | **1.04** | |
+`;
+    const todayStudies =
+      'TC de tórax protocolo TEP: sin signos de TEP; compromiso intersticial y bronquial a predominio de ambos lóbulos inferiores; impresionan de probable etiología infecciosa/inflamatoria.';
+
+    expect(run(yesterday, todayLab, todayStudies)).toBe(
+      'Hto 20.5 (30.5) Hb 7 (8.5) GB 3.9m 48%B (16.9m) Plaq 27 (311) Iono 137/4.8/94 Cr 0.76 Urea 24 PCR 42.1 Hepato: 0.2/0.24/16/20/44(71)/211/6.83/3.77 TC tx: sin signos TEP, comp interst y bronq a pred de ambos LI, impresionan infeccioso vs infl.',
+    );
+  });
+
+  it('no infiere previos de hepatograma cuando cambian varios componentes', () => {
+    expect(
+      run(
+        'Hepato: 0.2/0.24/16/20/71/211/6.83/3.77',
+        'Hepato: 0.3/0.24/16/20/44/211/6.83/3.77',
+      ),
+    ).toBe('Hepato: 0.3/0.24/16/20/44/211/6.83/3.77');
+  });
+});
+
 describe('microbiología', () => {
   it('reemplaza pendiente por resultado definitivo de la misma muestra', () => {
     expect(
