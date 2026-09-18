@@ -41,6 +41,7 @@ const normalizeLabValue = (key: LabKey, value: string): string => {
 
 const historicalLabel = (key: LabKey, source: string, value: string): string => {
   if (key === 'u' && /^Urea/i.test(source)) return 'Urea';
+  if (key === 'prot' && /^PrT/i.test(source)) return 'PrT';
   if (key === 'hep' && /^Hepato/i.test(source) && !/^(?:s\s*\/\s*p|sp)$/i.test(value)) {
     return 'Hepato:';
   }
@@ -112,7 +113,9 @@ const parseDifferential = (key: LabKey, value: string): LabItem['differential'] 
     /(?:\bN(?:eutrofilos?)?\s*)(\d+(?:[.,]\d+)?)\s*%|\b(\d+(?:[.,]\d+)?)\s*%\s*N\b/i,
   );
   const neutrophils = neutrophilMatch?.[1] ?? neutrophilMatch?.[2];
-  const blasts = value.match(/(?:\bB\s*|\bBlastos?\s*)(\d+(?:[.,]\d+)?)\s*%/i)?.[1];
+  const blastPrefix = value.match(/(?:\bB\s*|\bBlastos?\s*)(\d+(?:[.,]\d+)?)\s*%/i)?.[1];
+  const blastSuffix = value.match(/\b(\d+(?:[.,]\d+)?)\s*%\s*B\b/i)?.[1];
+  const blasts = blastPrefix ?? blastSuffix;
   if (!neutrophils && !blasts) return undefined;
   return { neutrophils, blasts };
 };
@@ -178,7 +181,7 @@ interface RowValue {
 
 const markdownRow = (input: string, labelPattern: string): RowValue | null => {
   const rowRegex = new RegExp(
-    `^.*(?:${labelPattern}).*?\\*\\*\\s*([<>]?\\d+(?:[.,]\\d+)?)\\s*\\*\\*.*$`,
+    `^\\s*\\|?\\s*(?:${labelPattern})\\s*\\|.*?\\*\\*\\s*([<>]?\\d+(?:[.,]\\d+)?)\\s*\\*\\*.*$`,
     'imu',
   );
   const match = input.match(rowRegex);
@@ -214,7 +217,7 @@ const compactCount = (value: string): string => {
 export const parseRawLabReport = (input: string): LabItem[] => {
   if (!input.trim()) return [];
   const isReport =
-    /HEMOGRAMA|RECUENTO DE GLOBULOS|IONOGRAMA EN SANGRE|CREATININA EN SANGRE/i.test(input) ||
+    /HEMOGRAMA|RECUENTO DE GL[OÓ]BULOS|RECUENTO DE PLAQUETAS|PLAQUETAS RECUENTO|IONOGRAMA EN SANGRE|UREA EN SANGRE|CREATININA EN SANGRE|PROTE[IÍ]NAS TOTALES|CALCIO I[OÓ]NICO|F[OÓ]SFORO|MAGNESIO|BLASTOS/i.test(input) ||
     /(?:^|\n)\s*BD\s*[:|]?\s*[<>]?\d/im.test(input);
   if (!isReport) return parseCompactList(input).labs;
 
@@ -225,9 +228,9 @@ export const parseRawLabReport = (input: string): LabItem[] => {
   };
 
   add('hto', reportValue(input, 'HEMATOCRITO'));
-  add('hb', reportValue(input, 'HEMOGLOBINA(?:\\s*\\||\\s{2,})'));
+  add('hb', reportValue(input, 'HEMOGLOBINA'));
 
-  const gb = reportValue(input, 'RECUENTO DE GLOBULOS BLANCOS');
+  const gb = reportValue(input, 'RECUENTO DE GL[OÓ]BULOS BLANCOS|GB');
   const neutrophils = reportValue(input, 'NEUTROFILOS(?:\\s*\\||\\s{2,})');
   const blasts = reportValue(input, 'BLASTOS');
   if (gb) {
@@ -243,9 +246,9 @@ export const parseRawLabReport = (input: string): LabItem[] => {
     });
   }
 
-  add('plaq', reportValue(input, 'PLAQUETAS RECUENTO'), compactCount);
-  add('u', reportValue(input, 'UREA EN SANGRE'));
-  add('cr', reportValue(input, 'CREATININA EN SANGRE'));
+  add('plaq', reportValue(input, 'PLAQUETAS RECUENTO|RECUENTO DE PLAQUETAS|PLAQUETAS'), compactCount);
+  add('u', reportValue(input, 'UREA(?: EN SANGRE)?'));
+  add('cr', reportValue(input, 'CREATININA(?: EN SANGRE)?'));
 
   const na = reportValue(input, 'SODIO');
   const k = reportValue(input, 'POTASIO');
@@ -255,35 +258,31 @@ export const parseRawLabReport = (input: string): LabItem[] => {
   }
 
   add('ac_urico', reportValue(input, 'ACIDO URICO EN SANGRE'));
+  add('cai', reportValue(input, 'CALCIO I[OÓ]NICO|CAI'));
   add('ca', reportValue(input, 'CALCIO EN SANGRE'));
-  add('p', reportValue(input, 'FOSFORO EN SANGRE'));
-  add('mg', reportValue(input, 'MAGNESIO EN SANGRE'));
+  add('p', reportValue(input, 'F[OÓ]SFORO(?: EN SANGRE)?'));
+  add('mg', reportValue(input, 'MAGNESIO(?: EN SANGRE)?'));
 
   const bd = reportValue(input, 'BILIRRUBINA DIRECTA|BD');
   const bt = reportValue(input, 'BILIRRUBINA TOTAL|BT');
-  const got = reportValue(input, 'ASPARTATO AMINOTRANSFERASA|ASAT-GOT|GOT');
-  const gpt = reportValue(input, 'ALANINA AMINOTRANSFERASA|ALAT-GPT|GPT');
-  const fa = reportValue(input, 'FOSFATASA ALCALINA SERICA|FA');
+  const got = reportValue(input, 'ASPARTATO AMINOTRANSFERASA|ASAT-GOT|GOT|AST');
+  const gpt = reportValue(input, 'ALANINA AMINOTRANSFERASA|ALAT-GPT|GPT|ALT');
+  const fa = reportValue(input, 'FOSFATASA ALCALINA SERICA|FAL|FA');
   const ggt = reportValue(input, 'GAMMA GLUTAMIL TRANSFERASA|GGT');
-  const proteins = reportValue(input, 'PROTEINAS TOTALES');
+  const proteins = reportValue(input, 'PROTE[IÍ]NAS TOTALES');
   const albumin = reportValue(input, 'ALBUMINA');
   const hepRows = [bd, bt, got, gpt, fa];
-  const extendedHepRows = [...hepRows, ggt, proteins, albumin];
-  const hasExtendedHepatogram = extendedHepRows.every((row) => row !== null);
   if (hepRows.every((row) => row !== null)) {
     const limits = [0.3, 1.2, 32, 33, 104];
     const abnormal = hepRows.some((row, index) => {
       const numeric = row ? normalizeDecimalForMath(row.value) : null;
       return Boolean(row?.abnormal) || (numeric !== null && numeric > limits[index]);
     });
-    const extendedAbnormal = hasExtendedHepatogram && extendedHepRows.some((row) => row?.abnormal);
-    const value = hasExtendedHepatogram
-      ? extendedHepRows.map((row) => row?.value).join('/')
-      : abnormal
-        ? hepRows.map((row) => row?.value).join('/')
-        : 'sp';
-    output.push(item('hep', value, abnormal || extendedAbnormal));
+    const components = hepRows.map((row) => row?.value ?? '');
+    const value = abnormal ? components.join('/') : 'sp';
+    output.push({ ...item('hep', value, abnormal), components });
   }
+  add('ggt', ggt);
 
   const kptt = reportValue(input, 'TIEMPO DE TROMBOPLASTINA PARCIAL|KPTT');
   const tp = reportValue(input, 'TIEMPO DE PROTROMBINA');
@@ -307,10 +306,9 @@ export const parseRawLabReport = (input: string): LabItem[] => {
 
   add('pcr', reportValue(input, 'PROTEINA C REACTIVA|PCR'));
   add('ldh', reportValue(input, 'LACTATO DESHIDROGENASA|LDH'));
-  if (!hasExtendedHepatogram) {
-    add('alb', albumin);
-    add('prot', proteins);
-  }
+  add('alb', albumin);
+  add('prot', proteins);
+  add('tacrol', reportValue(input, 'TACROL(?:EMIA)?'));
 
   if (neutrophils && !blasts && /^\s*N\s*\d/i.test(input.trim())) {
     const gbItem = output.find((candidate) => candidate.key === 'gb');

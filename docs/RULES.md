@@ -32,10 +32,12 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 | LAB-012 | EABv = venoso; EABa = arterial; mantener estructura previa y no interpretar. | Determinística para formatos reconocidos |
 | LAB-013 | Una glucosa medida hoy se incluye; una glucosa de la lista previa que no se repite se elimina según LAB-018. | Determinística |
 | LAB-014 | Parámetros opcionales (Alb, LDH, ferritina, ProBNP, TSH, GGT, ácido úrico, CMV, serologías) se incluyen si ya se siguen o son claramente relevantes. | Parcial |
-| LAB-015 | `Plaq`/`PLAQUETAS RECUENTO`, `Cr`/`CREATININA EN SANGRE`, `U`/`Urea`/`UREA EN SANGRE`, `GB`/`RECUENTO DE GLOBULOS BLANCOS`, `Hb`/`HEMOGLOBINA` y `Hto`/`HEMATOCRITO` se reconcilian por el mismo concepto interno. | Determinística |
+| LAB-015 | Las variantes crudas se reconcilian por concepto interno: `Plaq`/`PLAQUETAS`/`PLAQUETAS RECUENTO`/`RECUENTO DE PLAQUETAS`; `Cr`/`CREATININA`/`CREATININA EN SANGRE`; `U`/`Urea`/`UREA EN SANGRE`; `GB`/`RECUENTO DE GLOBULOS BLANCOS`; `Hb`/`HEMOGLOBINA`; `Hto`/`HEMATOCRITO`; `PrT`/`PROTEINAS TOTALES`; `Alb`/`ALBUMINA`; `CaI`/`CALCIO IONICO`; `P`/`FOSFORO`; `Mg`/`MAGNESIO`. | Determinística |
 | LAB-016 | Cuando la lista previa usa `Urea`, una actualización conserva ese rótulo; cuando usa `U`, conserva `U`. | Determinística |
 | LAB-017 | En una tendencia de GB con blastos aprobada, ambos recuentos se compactan a una cifra decimal y el diferencial actual se expresa como `[porcentaje]%B`. | Determinística para el patrón aprobado |
 | LAB-018 | Una glucosa previa no medida nuevamente no se arrastra de forma automática. | Determinística |
+| LAB-019 | `PrT`, `Alb`, `GGT` y `Tacrol` son conceptos independientes del bloque `Hep`; reconocer uno no autoriza a fabricar ni reemplazar los otros. | Determinística estructural |
+| LAB-020 | Un estudio `Ecodop Hep` se segmenta como estudio independiente y no se adjunta al valor precedente de laboratorio. | Determinística estructural |
 
 ## Tendencias y previos
 
@@ -52,6 +54,7 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 | PREV-009 | No usar umbrales matemáticos rígidos para decidir relevancia. | Incompatible con automatización completa sin una regla sustituta aprobada |
 | PREV-010 | Un estudio especial no repetido y todavía útil se conserva exactamente, incluidos sus previos. | Parcial: «útil» no está formalizado |
 | PREV-011 | Casos cuantitativos aprobados por LC-ERR-001: `Hb 8.5 → 7` conserva `(8.5)`; `Cr 0.54 → 0.76` omite previo; `Urea 35 → 24` omite previo; `Plaq 311 → 27` conserva `(311)`. | Determinística para estos patrones; la matriz general sigue abierta en A-001 |
+| PREV-012 | Caso cuantitativo aprobado por LC-ERR-002: `Cr 1.02 → 0.76` conserva `(1.02)`. | Determinística para este patrón; la matriz general sigue abierta en A-001 |
 
 ## Intervenciones
 
@@ -73,7 +76,7 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 | HEP-003 | Hepatograma aproximadamente habitual y sin aporte adicional: `Hep sp`. | Parcial: faltan umbrales y definición de «aproximadamente» |
 | HEP-004 | No usar `Hepato s/p`, `Hep s/p` ni `Hepato sp`; normalizarlos a `Hep sp`. | Determinística |
 | HEP-005 | Puede conservarse un previo sólo en el componente importante. | Parcial |
-| HEP-006 | Si una lista previa ya usa hepatograma extendido de ocho componentes y el nuevo informe contiene esos mismos ocho componentes, se conserva la estructura histórica; si cambia un único componente, el previo se adjunta sólo a ese componente. No se infieren normalidad ni relevancia clínica. | Determinística estructural; alcance clínico abierto en A-009 |
+| HEP-006 | Si una lista previa ya usa hepatograma extendido de ocho componentes y el nuevo informe contiene los cinco componentes de `Hep` más GGT, proteínas totales y albúmina, se conserva la estructura histórica; si cambia un único componente, el previo se adjunta sólo a ese componente. No se infieren normalidad ni relevancia clínica. | Determinística estructural; alcance clínico abierto en A-009 y A-010 |
 | COAG-001 | Coagulación aproximadamente normal: `Coag sp`. | Parcial: faltan rangos formales |
 | COAG-002 | Si hay alteración, conservar los componentes relevantes. | Parcial |
 | COAG-003 | Un `Coag sp` nuevo no se agrega si la lista previa no seguía coagulación. Si ya se seguía, la medición nueva puede actualizarla. | Determinística para persistencia |
@@ -143,3 +146,5 @@ Versión del inventario: 2026-09-18. Los identificadores son estables. Si una re
 - No arrastrar glucosa o FG no repetidos en LC-ERR-001.
 - No agregar `Coag sp` nuevo cuando no se venía siguiendo.
 - No mutilar el hallazgo pulmonar principal de una TC TEP negativa.
+- Separar los conceptos canónicos de hepatograma, GGT, proteínas totales, albúmina y tacrolimus antes del merge.
+- Segmentar `Ecodop Hep` como estudio para impedir que quede unido al valor de Mg precedente.

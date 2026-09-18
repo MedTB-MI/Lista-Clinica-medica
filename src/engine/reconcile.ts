@@ -43,7 +43,12 @@ const shouldKeepPrior = (key: LabKey, previousValue: string, current: LabItem): 
   if (key === 'hb') return Math.abs(next[0] - previous[0]) >= 1.5;
   if (key === 'hto') return Math.abs(next[0] - previous[0]) >= 5;
   if (key === 'u') return Math.abs(next[0] - previous[0]) >= 20;
-  if (key === 'cr') return Math.abs(next[0] - previous[0]) >= 0.3;
+  if (key === 'cr') {
+    return (
+      Math.abs(next[0] - previous[0]) >= 0.3 ||
+      (next[0] < previous[0] && relativeChange(previous[0], next[0]) >= 0.2)
+    );
+  }
   if (key === 'pcr') return Math.abs(next[0] - previous[0]) >= 30 || relativeChange(previous[0], next[0]) >= 0.3;
   if (key === 'gb') {
     const previousN = previousValue.match(/(\d+(?:[.,]\d+)?)\s*%?N\b/i)?.[1];
@@ -121,6 +126,46 @@ const mergeDuplicateLabs = (items: LabItem[]): LabItem[] => {
   return [...map.values()];
 };
 
+const reconcileHistoricalHepatogramShape = (
+  previous: LabItem[],
+  current: LabItem[],
+): LabItem[] => {
+  const previousHep = previous.find((item) => item.key === 'hep');
+  if (!previousHep || topLevelPrevious(previousHep.value).split('/').length !== 8) {
+    return current;
+  }
+
+  const currentMap = new Map(current.map((item) => [item.key, item]));
+  const hep = currentMap.get('hep');
+  const ggt = currentMap.get('ggt');
+  const proteins = currentMap.get('prot');
+  const albumin = currentMap.get('alb');
+  if (!hep || !ggt || !proteins || !albumin) {
+    return current;
+  }
+
+  const hepComponents = hep.components ?? hep.value.split('/');
+  if (hepComponents.length !== 5) {
+    return current;
+  }
+
+  const previousKeys = new Set(previous.map((item) => item.key));
+  const extendedValue = `${hepComponents.join('/')}/${ggt.value}/${proteins.value}/${albumin.value}`;
+  const extendedHep = {
+    ...hep,
+    value: extendedValue,
+    raw: `${hep.label} ${extendedValue}`,
+    abnormal: Boolean(hep.abnormal || ggt.abnormal || proteins.abnormal || albumin.abnormal),
+  };
+
+  return current
+    .map((item) => (item.key === 'hep' ? extendedHep : item))
+    .filter(
+      (item) =>
+        !(['ggt', 'prot', 'alb'] as LabKey[]).includes(item.key) || previousKeys.has(item.key),
+    );
+};
+
 const formatStandaloneGb = (value: string): string => {
   const count = value.match(/^([<>]?\s*\d+(?:[.,]\d+)?)\s*m?/i)?.[1];
   if (!count) return value;
@@ -159,7 +204,11 @@ const formatHepatogramTrend = (previous: string, current: string): string | null
 const formatUpdatedLab = (previous: LabItem | undefined, current: LabItem): string => {
   const label = previous?.label ?? LAB_LABELS[current.key];
   if (!previous) {
-    const value = current.key === 'gb' ? formatStandaloneGb(current.value) : current.value;
+    let value = current.key === 'gb' ? formatStandaloneGb(current.value) : current.value;
+    if (current.key === 'prot') {
+      const numeric = normalizeDecimalForMath(value);
+      if (numeric !== null) value = Number(numeric.toFixed(1)).toString();
+    }
     return `${label} ${value}`;
   }
   if (current.key === 'hep') {
@@ -175,6 +224,10 @@ const formatUpdatedLab = (previous: LabItem | undefined, current: LabItem): stri
   if (current.key === 'plaq' && !/m\b/i.test(previousValue)) {
     currentValue = currentValue.replace(/^([<>]?\s*\d+(?:[.,]\d+)?)m\b/i, '$1');
   }
+  if (current.key === 'prot') {
+    const numeric = normalizeDecimalForMath(currentValue);
+    if (numeric !== null) currentValue = Number(numeric.toFixed(1)).toString();
+  }
   const base = `${label} ${currentValue}`;
   if (!shouldKeepPrior(current.key, previous.value, current)) return base;
   return `${base} (${previousValue})`;
@@ -188,7 +241,7 @@ const orderedNewKeys = (items: LabItem[]): LabKey[] =>
 const persistsWithoutCurrentMeasurement = (item: LabItem): boolean => item.key !== 'glu';
 
 const includePreviouslyUntrackedLab = (item: LabItem): boolean =>
-  !(item.key === 'coag' && /^sp$/i.test(item.value));
+  item.key !== 'ggt' && !(item.key === 'coag' && /^sp$/i.test(item.value));
 
 const joinEntries = (entries: string[]): string =>
   entries
@@ -417,9 +470,10 @@ export const reconcile = ({ yesterday, todayLab, todayStudies }: ReconcileInput)
   const previous = parseCompactList(yesterday);
   const interventions = extractExplicitInterventions(todayLab);
   const clinicalLabText = stripStandaloneInterventionLines(todayLab);
-  const currentLabs = mergeDuplicateLabs(parseRawLabReport(clinicalLabText)).map((candidate) =>
-    attachIntervention(candidate, interventions.get(candidate.key)),
+  const parsedCurrentLabs = mergeDuplicateLabs(parseRawLabReport(clinicalLabText)).map(
+    (candidate) => attachIntervention(candidate, interventions.get(candidate.key)),
   );
+  const currentLabs = reconcileHistoricalHepatogramShape(previous.labs, parsedCurrentLabs);
 
   const previousMap = new Map(previous.labs.map((lab) => [lab.key, lab]));
   const currentMap = new Map(currentLabs.map((lab) => [lab.key, lab]));

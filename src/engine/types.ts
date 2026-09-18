@@ -14,12 +14,14 @@ export type LabKey =
   | 'eaba'
   | 'eab'
   | 'hep'
+  | 'ggt'
   | 'coag'
   | 'pcr'
   | 'vsg'
   | 'ldh'
   | 'alb'
   | 'prot'
+  | 'tacrol'
   | 'ac_urico'
   | 'ferritina'
   | 'probnp'
@@ -43,6 +45,7 @@ export interface LabItem {
   raw: string;
   abnormal?: boolean;
   hasIntervention: boolean;
+  components?: string[];
   differential?: {
     neutrophils?: string;
     blasts?: string;

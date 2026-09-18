@@ -231,6 +231,97 @@ describe('LC-ERR-001 — reconciliación por concepto canónico', () => {
   });
 });
 
+describe('LC-ERR-002 — pipeline canónico estructural', () => {
+  it('TEST A — reconoce PLAQUETAS RECUENTO y conserva el previo relevante', () => {
+    expect(run('Plaq 46m', 'PLAQUETAS RECUENTO 27 mil/mm3')).toBe(
+      'Plaq 27m (46m)',
+    );
+  });
+
+  it('TEST B — reconoce UREA EN SANGRE y reemplaza U', () => {
+    expect(run('U 97', 'UREA EN SANGRE 24 mg/dl')).toBe('U 24 (97)');
+  });
+
+  it('TEST C — reconoce CREATININA EN SANGRE y conserva la mejoría aprobada', () => {
+    expect(run('Cr 1.02', 'CREATININA EN SANGRE 0.76 mg/dl')).toBe(
+      'Cr 0.76 (1.02)',
+    );
+  });
+
+  it('TEST D — reconcilia proteínas totales y albúmina como conceptos independientes', () => {
+    expect(
+      run('PrT 4.6 Alb 3.05', 'PROTEINAS TOTALES 5.83\nALBUMINA 3.16'),
+    ).toBe('PrT 5.8 Alb 3.16');
+  });
+
+  it('TEST E — actualiza CaI, fósforo y magnesio sin previos triviales', () => {
+    expect(
+      run(
+        'CaI 1.18 P 2.3 Mg 1.7',
+        'CALCIO IONICO 1.03\nFOSFORO 3.9\nMAGNESIO 2.2',
+      ),
+    ).toBe('CaI 1.03 P 3.9 Mg 2.2');
+  });
+
+  it('TEST F — prioriza blastos y serializa la tendencia sin neutrófilos', () => {
+    expect(
+      run('GB 16.9m', 'GB 3.91 mil/mm3\nBLASTOS 48%'),
+    ).toBe('GB 3.9m 48%B (16.9m)');
+  });
+
+  it('TEST G — el nuevo estudio reemplaza el resumen torácico previo', () => {
+    expect(
+      run(
+        'TC Tx c/: sin TEP',
+        '',
+        'TC de tórax: sin signos de TEP; compromiso intersticial/bronquial bibasal; impresión infecciosa/inflamatoria.',
+      ),
+    ).toBe(
+      'TC tx: sin signos TEP, comp interst y bronq a pred de ambos LI, impresionan infeccioso vs infl.',
+    );
+  });
+
+  it('conserva conceptos independientes no repetidos al actualizar minerales', () => {
+    expect(
+      run(
+        'Tacrol 4.8 Mg 1.7 Ecodop Hep IR 0.78 Circul Colat ausente',
+        'MAGNESIO 2.2',
+      ),
+    ).toBe('Tacrol 4.8 Mg 2.2 Ecodop Hep IR 0.78 Circul Colat ausente');
+  });
+
+  it('reproduce el caso de oro sintético LC-ERR-002 completo', () => {
+    const yesterday =
+      'Hto 20.5 Hb 7 GB 3.9m 48%B (2130m 79.1%N) Plaq 46m U 97 Cr 1.02 Iono 134/4.1/102 Hep 0.3/0.43/41/42/188 PrT 4.6 Alb 3.05 Tacrol 4.8 CaI 1.18 P 2.3 Mg 1.7 Ecodop Hep IR 0.78 Circul Colat ausente TC Tx c/: sin TEP';
+    const todayLab = `
+| HEMATOCRITO | **20.5** | % |
+| HEMOGLOBINA | **7** | g/dl |
+| RECUENTO DE GLOBULOS BLANCOS | **3.91** | mil/mm3 |
+| BLASTOS | **48** | % |
+| PLAQUETAS RECUENTO | **27** | mil/mm3 |
+| UREA EN SANGRE | **24** | mg/dl |
+| CREATININA EN SANGRE | **0.76** | mg/dl |
+| CALCIO IONICO | **1.03** | mmol/l |
+| FOSFORO | **3.9** | mg/dl |
+| MAGNESIO | **2.2** | mg/dl |
+| BILIRRUBINA DIRECTA | **0.39** | mg/dl |
+| BILIRRUBINA TOTAL | **0.53** | mg/dl |
+| AST | **44** | UI/l |
+| ALT | **44** | UI/l |
+| FAL | **122** | UI/l |
+| GGT | **92** | UI/l |
+| PROTEINAS TOTALES | **5.83** | g/dl |
+| ALBUMINA | **3.16** | g/dl |
+`;
+    const todayStudies =
+      'TC de tórax: sin signos de TEP; compromiso intersticial/bronquial bibasal; impresión infecciosa/inflamatoria.';
+
+    expect(run(yesterday, todayLab, todayStudies)).toBe(
+      'Hto 20.5 Hb 7 GB 3.9m 48%B Plaq 27m (46m) U 24 (97) Cr 0.76 (1.02) Iono 134/4.1/102 Hep 0.39/0.53/44/44/122 PrT 5.8 Alb 3.16 Tacrol 4.8 CaI 1.03 P 3.9 Mg 2.2 Ecodop Hep IR 0.78 Circul Colat ausente TC tx: sin signos TEP, comp interst y bronq a pred de ambos LI, impresionan infeccioso vs infl.',
+    );
+  });
+});
+
 describe('microbiología', () => {
   it('reemplaza pendiente por resultado definitivo de la misma muestra', () => {
     expect(
