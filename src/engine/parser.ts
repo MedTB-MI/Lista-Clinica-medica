@@ -39,6 +39,14 @@ const normalizeLabValue = (key: LabKey, value: string): string => {
   return normalized;
 };
 
+const historicalLabel = (key: LabKey, source: string, value: string): string => {
+  if (key === 'u' && /^Urea/i.test(source)) return 'Urea';
+  if (key === 'hep' && /^Hepato/i.test(source) && !/^(?:s\s*\/\s*p|sp)$/i.test(value)) {
+    return 'Hepato:';
+  }
+  return LAB_LABELS[key];
+};
+
 const canonicalSupplementalKey = (label: string, text: string): string => {
   const folded = label.toLocaleUpperCase('es');
   if (/^(?:TC TX C\/|TCTX|TAC TX|TC TX)/.test(folded)) {
@@ -132,17 +140,13 @@ export const parseCompactList = (input: string): ParsedCompactList => {
         : labText.length;
     let value = normalizeLabValue(key, labText.slice(valueStart, nextStart));
     if (!value) return;
-    const label = LAB_LABELS[key];
+    const label = historicalLabel(key, match[1], value);
     const differential = parseDifferential(key, value);
     if (key === 'gb' && differential) {
       const count = value.match(/^[<>]?\s*\d+(?:[.,]\d+)?\s*m?/i)?.[0].replace(/\s+/g, '');
       if (count) {
-        let normalizedCount = count.endsWith('m') ? count : `${count}m`;
+        const normalizedCount = count.endsWith('m') ? count : `${count}m`;
         if (differential.blasts) {
-          const numeric = normalizeDecimalForMath(normalizedCount);
-          if (numeric !== null && Math.abs(numeric - Math.round(numeric)) <= 0.1) {
-            normalizedCount = `${Math.round(numeric)}m`;
-          }
           value = `${normalizedCount} B${differential.blasts}%`;
         } else if (differential.neutrophils) {
           value = `${normalizedCount} ${differential.neutrophils}%N`;
@@ -204,10 +208,7 @@ const item = (key: LabKey, value: string, abnormal = false): LabItem => ({
 });
 
 const compactCount = (value: string): string => {
-  const number = normalizeDecimalForMath(value);
-  if (number === null) return `${value}m`;
-  const rounded = Math.abs(number - Math.round(number)) <= 0.1 ? String(Math.round(number)) : value;
-  return `${rounded}m`;
+  return `${value}m`;
 };
 
 export const parseRawLabReport = (input: string): LabItem[] => {
@@ -263,15 +264,25 @@ export const parseRawLabReport = (input: string): LabItem[] => {
   const got = reportValue(input, 'ASPARTATO AMINOTRANSFERASA|ASAT-GOT|GOT');
   const gpt = reportValue(input, 'ALANINA AMINOTRANSFERASA|ALAT-GPT|GPT');
   const fa = reportValue(input, 'FOSFATASA ALCALINA SERICA|FA');
+  const ggt = reportValue(input, 'GAMMA GLUTAMIL TRANSFERASA|GGT');
+  const proteins = reportValue(input, 'PROTEINAS TOTALES');
+  const albumin = reportValue(input, 'ALBUMINA');
   const hepRows = [bd, bt, got, gpt, fa];
+  const extendedHepRows = [...hepRows, ggt, proteins, albumin];
+  const hasExtendedHepatogram = extendedHepRows.every((row) => row !== null);
   if (hepRows.every((row) => row !== null)) {
     const limits = [0.3, 1.2, 32, 33, 104];
     const abnormal = hepRows.some((row, index) => {
       const numeric = row ? normalizeDecimalForMath(row.value) : null;
       return Boolean(row?.abnormal) || (numeric !== null && numeric > limits[index]);
     });
-    const value = abnormal ? hepRows.map((row) => row?.value).join('/') : 'sp';
-    output.push(item('hep', value, abnormal));
+    const extendedAbnormal = hasExtendedHepatogram && extendedHepRows.some((row) => row?.abnormal);
+    const value = hasExtendedHepatogram
+      ? extendedHepRows.map((row) => row?.value).join('/')
+      : abnormal
+        ? hepRows.map((row) => row?.value).join('/')
+        : 'sp';
+    output.push(item('hep', value, abnormal || extendedAbnormal));
   }
 
   const kptt = reportValue(input, 'TIEMPO DE TROMBOPLASTINA PARCIAL|KPTT');
@@ -296,8 +307,10 @@ export const parseRawLabReport = (input: string): LabItem[] => {
 
   add('pcr', reportValue(input, 'PROTEINA C REACTIVA|PCR'));
   add('ldh', reportValue(input, 'LACTATO DESHIDROGENASA|LDH'));
-  add('alb', reportValue(input, 'ALBUMINA'));
-  add('prot', reportValue(input, 'PROTEINAS TOTALES'));
+  if (!hasExtendedHepatogram) {
+    add('alb', albumin);
+    add('prot', proteins);
+  }
 
   if (neutrophils && !blasts && /^\s*N\s*\d/i.test(input.trim())) {
     const gbItem = output.find((candidate) => candidate.key === 'gb');

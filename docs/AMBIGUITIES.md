@@ -39,6 +39,12 @@ Un resultado sin tipo/fecha sólo puede reemplazar un pendiente si existe una ú
 
 El contrato acepta una sección de intervenciones, pero la interfaz solicitada enumera sólo tres entradas y una salida. Para no sumar un quinto casillero, la app admite intervenciones dentro de «Laboratorios de hoy», pegadas al valor o bajo una línea `Intervenciones:`.
 
+## A-009 — Tendencias en hepatograma extendido
+
+LC-ERR-001 aprueba conservar `44(71)` dentro de un hepatograma histórico de ocho componentes. Eso autoriza una reconciliación estructural cerrada cuando ambos hepatogramas tienen ocho componentes y sólo uno cambia; no define qué magnitud de cambio es clínicamente importante ni autoriza extrapolar el criterio a hepatogramas con otra estructura o con varios componentes modificados.
+
+La versión actual no interpreta normalidad ni relevancia en ese escenario. Si cambian varios componentes, informa los valores nuevos sin seleccionar previos. La matriz clínica general sigue requiriendo decisión del propietario.
+
 ## Decisión de release
 
 La app es apta como prototipo verificable y asistente conservador. No debe considerarse una reproducción completa del Gem ni publicarse para uso clínico rutinario hasta cerrar A-001 y A-005, como mínimo.
