@@ -249,7 +249,7 @@ const splitPlainReportSections = (input: string): PlainReportSection[] => {
   let current: PlainReportSection | null = null;
 
   input.split(/\r?\n/).forEach((rawLine) => {
-    const line = rawLine.trim();
+    const line = rawLine.replace(/\s+/g, ' ').trim();
     const analyte = line.match(reportAnalyteHeader);
     if (analyte) {
       current = { label: analyte[1].trim(), lines: [] };
@@ -340,7 +340,8 @@ export const parseRawLabReport = (input: string): LabItem[] => {
   const isReport =
     /HEMOGRAMA|RECUENTO DE GL[OÓ]BULOS|RECUENTO DE PLAQUETAS|PLAQUETAS RECUENTO|IONOGRAMA EN SANGRE|UREA EN SANGRE|CREATININA EN SANGRE|PROTE[IÍ]NAS TOTALES|CALCIO I[OÓ]NICO|F[OÓ]SFORO|MAGNESIO|BLASTOS/i.test(input) ||
     /(?:^|\n)\s*BD\s*[:|]?\s*[<>]?\d/im.test(input) ||
-    (/m[eé]todo\s*:/iu.test(input) && plainSections.length > 0);
+    (/m[eé]todo\s*:/iu.test(input) && plainSections.length > 0) ||
+    /HEMOGRAMA|HEPATOGRAMA|IONOGRAMA(?: EN SANGRE)?|COAGULOGRAMA/iu.test(input);
   if (!isReport) return parseCompactList(input).labs;
 
   const read = (labelPattern: string): RowValue | null =>
